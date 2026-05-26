@@ -1,4 +1,3 @@
-import os
 import time
 from collections import defaultdict, deque
 
@@ -12,13 +11,9 @@ BaseHTTPMiddleware is the class we inherit from to create custom middleware in F
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-'''
-Still need to discuss, do I implement the rate limit and window here, or do I do it via the .env file
-WHICH requires the README to be updated so that the user knows to implement the correct information as .env is in
-.ignore so it must be created each time. Playing it safe and including it in both spots FOR NOW.
-'''
-RATE_LIMIT_REQUESTS = int (os.getenv("RATE_LIMIT_REQUESTS", "50"))
-RATE_LIMIT_WINDOW_SECONDS = int (os.getenv("RATE_LIMIT_WINDOW_SECONDS", "3600"))
+
+RATE_LIMIT_REQUESTS = 50
+RATE_LIMIT_WINDOW_SECONDS = 3600
 
 '''
 requests_by_ip is a dictionary /string -> [IP ADDRESS]and a double-ended queue /float -> [timestamps] of when the request was
