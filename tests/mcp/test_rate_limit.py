@@ -1,24 +1,48 @@
-from fastapi import FastAPI
+import asyncio
+from collections.abc import Awaitable, Callable, MutableMapping
+from types import SimpleNamespace
+from typing import Any, cast
+
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from starlette.status import HTTP_200_OK, HTTP_429_TOO_MANY_REQUESTS
+from starlette.responses import Response
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_400_BAD_REQUEST,
+    HTTP_429_TOO_MANY_REQUESTS,
+)
 
 from app.security import rate_limit
 from app.security.rate_limit import RateLimitMiddleware
 
 
-# Uses a small test FastAPI app so the middleware logic can be tested without starting the real server.
+async def empty_asgi_app(
+    _scope: MutableMapping[str, Any],
+    _receive: Callable[[], Awaitable[MutableMapping[str, Any]]],
+    _send: Callable[[MutableMapping[str, Any]], Awaitable[None]],
+):
+    # BaseHTTPMiddleware needs an ASGI app when it is created.
+    # ASGI apps take scope, receive, and send, but this test does not use them
+    # because it calls dispatch() directly instead of running a full server.
+    # The empty app only exists so RateLimitMiddleware can be constructed.
+    await asyncio.sleep(0)
+
+
 def test_rate_limit_blocks_after_limit(monkeypatch):
     rate_limit.requests_by_ip.clear()
 
-    # monkeypatch changes these values only for this test, then pytest restores them afterward.
+    # The real limit is higher, so monkeypatch lowers it for this test only.
+    # Pytest restores the original values after the test finishes.
     monkeypatch.setattr(rate_limit, "RATE_LIMIT_REQUESTS", 2)
     monkeypatch.setattr(rate_limit, "RATE_LIMIT_WINDOW_SECONDS", 60)
 
+    # TestClient runs this small FastAPI app in the test process.
+    # That means the middleware is tested without manually starting the server.
     test_app = FastAPI()
     test_app.add_middleware(RateLimitMiddleware)
 
-    # Just creates a fake route similar to /health just for the testing case without needing the server to actually provide responses.
-    # it sends a GET request to /test, so then it can return a successful JSON response.
+    # This route gives the test a real endpoint to call.
+    # If the middleware allows the request, the route returns HTTP 200.
     @test_app.get("/test")
     def test_route():
         return {"status": "ok"}
@@ -32,3 +56,26 @@ def test_rate_limit_blocks_after_limit(monkeypatch):
     assert response_1.status_code == HTTP_200_OK
     assert response_2.status_code == HTTP_200_OK
     assert response_3.status_code == HTTP_429_TOO_MANY_REQUESTS
+
+
+def test_rate_limit_rejects_missing_client_ip():
+    async def run_test():
+        middleware = RateLimitMiddleware(app=empty_asgi_app)
+
+        # dispatch() normally receives a real Starlette Request.
+        # For this focused test, only client=None matters because that is the
+        # safety branch we want to check.
+        request = cast(Request, cast(object, SimpleNamespace(client=None)))
+
+        # call_next represents the next step in the middleware chain.
+        # If the middleware blocks the request early, this response is not used.
+        async def call_next(_request: Request):
+            await asyncio.sleep(0)
+            return Response("ok")
+
+        # dispatch() is async, so this helper awaits it before making assertions.
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == HTTP_400_BAD_REQUEST
+
+    asyncio.run(run_test())
