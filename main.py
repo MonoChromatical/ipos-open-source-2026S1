@@ -1,17 +1,15 @@
 # Unit Converter API + MCP (tools, resources, prompts)
 # Uses FastAPI for HTTP routes and FastMCP to expose tools/resources/prompts over HTTP/SSE transports.
-import datetime
-import os
-import platform
-import time
 
-import uvicorn
+# Create Database
+
 from fastapi import APIRouter, FastAPI
 from fastmcp import FastMCP
 
 from app.mcp.mcp_prompts.converter_prompts import explain_conversion_prompt
 from app.mcp.mcp_resources.converter_resources import RESOURCE_DEFINITIONS
 from app.mcp.mcp_tools.miles_to_km import router as mile_to_km
+from app.routes.router_handler import Router
 from app.utils.resource_utils import register_resources
 
 # FastAPI app for plain HTTP
@@ -26,34 +24,11 @@ app.include_router(mile_to_km)
 
 # --- Register System ---
 system_router = APIRouter(prefix="", tags=["system"])
-started_at = time.time()
+task_router = APIRouter(prefix="", tags=["task"])
 
+Router.load_all_routes()
+Router.add_routes_to_app(app)
 
-@system_router.get("/")
-def root():
-    return {
-        "service": "unit-converter-mcp-server",
-        "status": "ok",
-        "docs": "/docs",
-        "health": "/health",
-        "mcp": "/mcp/",
-    }
-
-
-@system_router.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
-        "python": platform.python_version(),
-        "platform": platform.platform(),
-        "pid": os.getpid(),
-        "cwd": os.getcwd(),
-        "uptime_seconds": round(time.time() - started_at, 2),
-    }
-
-
-app.include_router(system_router)
 
 # FastMCP server generated from FastAPI OpenAPI (tools) plus manual resources/prompts
 mcp = FastMCP.from_fastapi(

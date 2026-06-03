@@ -1,15 +1,45 @@
-#Converter API + MCP
+# Converter API + MCP
 
 - builds the FastAPI app, wraps it with FastMCP, mounts MCP HTTP/SSE endpoints, registers resources and prompts, and starts uvicorn.
-- requirements.txt – Python dependencies.
+- requirements.txt - Python dependencies.
+
+## System Architecture
+
+This project uses `main.py` as the main entry point.
+
+The FastAPI app provides the HTTP API, documentation pages, and health check. FastMCP wraps the FastAPI app and exposes MCP tools, resources, and prompts through the MCP endpoint.
+
+```txt
+main.py
+  |
+  |-- FastAPI app
+  |     |-- HTTP routes
+  |     |-- Swagger UI
+  |     |-- ReDoc
+  |     |-- health check
+  |
+  |-- FastMCP
+        |-- MCP tools
+        |-- MCP resources
+        |-- MCP prompts
+        |-- /mcp endpoint
+```
+
+Important folders:
+
+```txt
+app/mcp/mcp_tools/        # MCP tools and FastAPI route logic
+app/mcp/mcp_prompts/      # MCP prompt templates
+app/mcp/mcp_resources/    # MCP resource definitions
+tests/mcp/                # MCP test suite
+example_llm_client/       # Example Gemini / LLM client
+```
 
 ## Prerequisites
 
 - Python 3.14+
 - Virtual environment.
 - npm inspector below.
-
-⸻
 
 ## Setup from this folder
 
@@ -27,26 +57,40 @@ python -m pip install -r requirements.txt
 uv sync
 ```
 
-⸻
+## Configure Gemini
+
+The project includes an example environment file called `.env.example`.
+
+Create a local `.env` file from `.env.example`, then add your Gemini configuration:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+MCP_SERVER_URL=http://localhost:8003/mcp
+```
+
+You can get a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+The `.env` file is ignored by git, so your API key should stay local and should not be committed.
 
 ## Run the HTTP + MCP server
 
 ```bash
 # start the server
 
-# with Python(reommended)
+# with Python 
 python -m main
 
-# with UV (install in work in progress)
+# with UV (recommended)
 uv run main.py
 
 # with just
 just run
-
 ```
-**To run test curl commands see doc/curl_testing/mcp_curl_testing_examples**
 
-You’ll see:
+**To run test curl commands see `app/docs/curl_testing/mcp_curl_test_examples.md`.**
+
+You'll see:
 
 - Swagger UI: http://localhost:8003/docs
 - ReDoc: http://localhost:8003/redoc
@@ -63,10 +107,12 @@ Each endpoint returns JSON like:
 
 ### Add JSON content type (and optionally your auth token)
 
--H "Content-Type: application/json" \
+```txt
+-H "Content-Type: application/json"
 -H "Authorization: Bearer <TOKEN>"
+```
 
-Our server doesn’t require auth yet, we can omit the **Authorization** header.
+Our server doesn't require auth yet, we can omit the **Authorization** header.
 
 ## Use with MCP (VS Code Example)
 
@@ -90,8 +136,6 @@ Our server doesn’t require auth yet, we can omit the **Authorization** header.
    - Resources: resource://unit_reference, resource://troubleshooting_guide
    - Prompts: explain_conversion, api_usage
 
-⸻
-
 ## Inspect with the npm MCP Inspector
 
 - explore everything (tools, resources, prompts) in a browser.
@@ -100,8 +144,65 @@ Our server doesn’t require auth yet, we can omit the **Authorization** header.
 ```bash
 # If env error appears
 npx @modelcontextprotocol/inspector@latest -e DUMMY=1 --url http://localhost:8003/mcp --transport streamable-http
-
 ```
+
+## Run Tests
+
+Run the test suite:
+
+```bash
+python -m pytest -v
+```
+
+Or with UV:
+
+```bash
+uv run pytest -v
+```
+
+Or with just:
+
+```bash
+just test
+```
+
+## Adding Extensions
+
+Add new MCP tools here:
+
+```txt
+app/mcp/mcp_tools/
+```
+
+Add new MCP prompts here:
+
+```txt
+app/mcp/mcp_prompts/
+```
+
+Add new MCP resources here:
+
+```txt
+app/mcp/mcp_resources/
+```
+
+Add or update MCP tests here:
+
+```txt
+tests/mcp/
+```
+
+Add or update example LLM client code here:
+
+```txt
+example_llm_client/
+```
+
+## Contributing
+
+For detailed contribution guidelines, see [CONTRIBUTION.md](CONTRIBUTION.md).
+
+
 
 ## Handling errors
 
@@ -113,10 +214,10 @@ npx @modelcontextprotocol/inspector@latest -e DUMMY=1 --url http://localhost:800
 
 ## Notes
 
-**To run test curl commands see doc/curl_testing/mcp_curl_testing_examples**
+**To run test curl commands see `app/docs/curl_testing/mcp_curl_test_examples.md`.**
 
 macOS/Linux (bash/zsh)
-• The examples above will work as-is.
+- The examples above will work as-is.
 
 ```bash
 # Windows PowerShell
@@ -129,3 +230,40 @@ Windows CMD
 ```bash
 curl -s -X POST http://localhost:8003/mcp/ -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"method\":\"prompts/list\",\"params\":{},\"id\":1}"
 ```
+
+---
+
+## Tool Installation Notes
+
+### Just Command Runner (Recommended)
+
+This project uses `just` to simplify common tasks like running the server and tests.
+
+### Recommended Installation
+
+```bash
+# Using UV (Any platform)
+uv tool install rust-just
+```
+
+#### Windows
+
+```powershell
+# Using WinGet (Native)
+winget install --id Casey.Just --exact
+
+# Using Scoop
+scoop install just
+
+# Using Chocolatey
+choco install just
+```
+
+#### macOS
+
+```bash
+# Using Homebrew (macOS)
+brew install just
+```
+
+Once installed, simply run `just` in your terminal to see all available commands.
