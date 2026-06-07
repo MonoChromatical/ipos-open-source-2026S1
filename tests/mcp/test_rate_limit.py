@@ -16,6 +16,11 @@ from app.security import rate_limit
 from app.security.rate_limit import RateLimitMiddleware
 
 
+# Keep the test limit small so the tests can trigger the rate limiter quickly.
+TEST_RATE_LIMIT_REQUESTS = 2
+TEST_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
 async def empty_asgi_app(
     _scope: MutableMapping[str, Any],
     _receive: Callable[[], Awaitable[MutableMapping[str, Any]]],
@@ -33,8 +38,17 @@ def test_rate_limit_blocks_after_limit(monkeypatch):
 
     # The real limit is higher, so monkeypatch lowers it for this test only.
     # Pytest restores the original values after the test finishes.
-    monkeypatch.setattr(rate_limit, "RATE_LIMIT_REQUESTS", 2)
-    monkeypatch.setattr(rate_limit, "RATE_LIMIT_WINDOW_SECONDS", 60)
+    monkeypatch.setattr(
+        rate_limit,
+        "RATE_LIMIT_REQUESTS",
+        TEST_RATE_LIMIT_REQUESTS
+    )
+
+    monkeypatch.setattr(
+        rate_limit,
+        "RATE_LIMIT_WINDOW_SECONDS",
+        TEST_RATE_LIMIT_WINDOW_SECONDS
+    )
 
     # TestClient runs this small FastAPI app in the test process.
     # That means the middleware is tested without manually starting the server.
@@ -56,6 +70,9 @@ def test_rate_limit_blocks_after_limit(monkeypatch):
     assert response_1.status_code == HTTP_200_OK
     assert response_2.status_code == HTTP_200_OK
     assert response_3.status_code == HTTP_429_TOO_MANY_REQUESTS
+    assert response_3.headers["Retry-After"] == str(TEST_RATE_LIMIT_WINDOW_SECONDS)
+
+    rate_limit.requests_by_ip.clear()
 
 
 def test_rate_limit_rejects_missing_client_ip():
@@ -79,3 +96,42 @@ def test_rate_limit_rejects_missing_client_ip():
         assert response.status_code == HTTP_400_BAD_REQUEST
 
     asyncio.run(run_test())
+
+
+def test_rate_limit_integrates_with_api(monkeypatch):
+    # Clear global state before this integration-style test starts.
+    rate_limit.requests_by_ip.clear()
+
+    # Use the same small limit values as the focused middleware test.
+    monkeypatch.setattr(
+        rate_limit,
+        "RATE_LIMIT_REQUESTS",
+        TEST_RATE_LIMIT_REQUESTS,
+    )
+    monkeypatch.setattr(
+        rate_limit,
+        "RATE_LIMIT_WINDOW_SECONDS",
+        TEST_RATE_LIMIT_WINDOW_SECONDS,
+    )
+
+    # Build a small API app and attach the middleware in the same way main.py does.
+    test_app = FastAPI()
+    test_app.add_middleware(RateLimitMiddleware)
+
+    # Use a health-style route so the test exercises middleware around an API endpoint.
+    @test_app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    client = TestClient(test_app)
+
+    response_1 = client.get("/health")
+    response_2 = client.get("/health")
+    response_3 = client.get("/health")
+
+    assert response_1.status_code == HTTP_200_OK
+    assert response_2.status_code == HTTP_200_OK
+    assert response_3.status_code == HTTP_429_TOO_MANY_REQUESTS
+    assert response_3.headers["Retry-After"] == str(TEST_RATE_LIMIT_WINDOW_SECONDS)
+
+    rate_limit.requests_by_ip.clear()
